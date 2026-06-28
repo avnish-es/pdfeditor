@@ -136,7 +136,7 @@ const initialStates = {
 
 export const usePdfStore = create<PdfStore>((set, get) => ({
   ...initialStates,
-  isDarkMode: true, // Default to dark mode for premium look
+  isDarkMode: false, // Default to light mode for premium clean look
 
   setPdfFile: (file) => {
     // Revoke old URL if exists

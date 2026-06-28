@@ -90,6 +90,16 @@ export default function App() {
     }, 3000);
   };
 
+  // Sync dark mode class on mount
+  useEffect(() => {
+    const isDark = usePdfStore.getState().isDarkMode;
+    if (isDark) {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+  }, []);
+
   // Keyboard Shortcuts & Nudge Controls
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
