@@ -23,7 +23,7 @@ const createDummyPdf = async (numPages: number): Promise<Uint8Array> => {
 
 // Helper to convert Uint8Array to File
 const bytesToFile = (bytes: Uint8Array, name: string): File => {
-  return new File([bytes], name, { type: "application/pdf" });
+  return new File([bytes as any], name, { type: "application/pdf" });
 };
 
 describe("pdfOperations Utility", () => {

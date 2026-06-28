@@ -13,6 +13,7 @@ import {
   Split,
   GitCompare,
   Sparkles,
+  HelpCircle,
 } from "lucide-react";
 import { usePdfStore } from "../store/usePdfStore";
 import { Button } from "./ui/Button";
@@ -25,6 +26,7 @@ interface TopToolbarProps {
   onMergeClick: () => void;
   onSplitClick: () => void;
   onSecurityClick: () => void;
+  onHelpClick: () => void;
 }
 
 export const TopToolbar: React.FC<TopToolbarProps> = ({
@@ -34,6 +36,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
   onMergeClick,
   onSplitClick,
   onSecurityClick,
+  onHelpClick,
 }) => {
   const {
     pdfFile,
@@ -235,8 +238,13 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
         )}
 
         {/* Theme Toggle */}
-        <Button variant="ghost" size="icon" onClick={toggleDarkMode} className="h-9 w-9 rounded-lg">
+        <Button variant="ghost" size="icon" onClick={toggleDarkMode} className="h-9 w-9 rounded-lg" title="Toggle theme">
           {isDarkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+        </Button>
+
+        {/* Help Button */}
+        <Button variant="ghost" size="icon" onClick={onHelpClick} className="h-9 w-9 rounded-lg" title="Help & Keyboard Shortcuts">
+          <HelpCircle className="h-4.5 w-4.5" />
         </Button>
 
         {pdfFile && (
