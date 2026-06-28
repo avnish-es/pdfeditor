@@ -22,6 +22,7 @@ import {
   Compass,
   Image as ImageIcon,
   Heading,
+  Hash,
 } from "lucide-react";
 import { usePdfStore } from "../store/usePdfStore";
 import type { ToolType, ShapeType } from "../store/usePdfStore";
@@ -36,6 +37,7 @@ interface LeftSidebarProps {
   onOpenSignatureDialog: () => void;
   onRunOcr: () => void;
   onTriggerCompress: () => void;
+  onBatesClick: () => void;
 }
 
 export const LeftSidebar: React.FC<LeftSidebarProps> = ({
@@ -47,6 +49,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
   onOpenSignatureDialog,
   onRunOcr,
   onTriggerCompress,
+  onBatesClick,
 }) => {
   const {
     activeTool,
@@ -337,7 +340,15 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                     onClick={onExtractPages}
                   >
                     <FileDown className="h-3.5 w-3.5 text-purple-500" />
-                    Extract Current Page
+                    Extract Page
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="justify-start gap-2 h-9 text-xs"
+                    onClick={onBatesClick}
+                  >
+                    <Hash className="h-3.5 w-3.5 text-amber-500" />
+                    Bates Numbering
                   </Button>
                 </div>
               </div>

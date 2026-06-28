@@ -366,3 +366,90 @@ export const overlayEditsOnPdf = async (
   
   return await pdfDoc.save();
 };
+
+/**
+ * Applies sequential Bates numbering (legal stamping) to all pages in a PDF.
+ */
+export const applyBatesNumbering = async (
+  pdfBytes: Uint8Array,
+  options: {
+    prefix?: string;
+    suffix?: string;
+    startNumber: number;
+    paddingLength: number;
+    position: "topLeft" | "topCenter" | "topRight" | "bottomLeft" | "bottomCenter" | "bottomRight";
+    fontSize?: number;
+    color?: string; // hex
+  }
+): Promise<Uint8Array> => {
+  const pdfDoc = await PDFDocument.load(pdfBytes);
+  const pages = pdfDoc.getPages();
+  const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  
+  const prefix = options.prefix || "";
+  const suffix = options.suffix || "";
+  const fontSize = options.fontSize || 10;
+  
+  // Parse color
+  let r = 0, g = 0, b = 0;
+  if (options.color && options.color.startsWith("#")) {
+    const hex = options.color.replace("#", "");
+    r = parseInt(hex.substring(0, 2), 16) / 255;
+    g = parseInt(hex.substring(2, 4), 16) / 255;
+    b = parseInt(hex.substring(4, 6), 16) / 255;
+  }
+  
+  for (let i = 0; i < pages.length; i++) {
+    const page = pages[i];
+    const { width, height } = page.getSize();
+    
+    // Generate Bates number, e.g., BATES-000001-CONF
+    const currentNum = options.startNumber + i;
+    const paddedNum = String(currentNum).padStart(options.paddingLength, "0");
+    const batesString = `${prefix}${paddedNum}${suffix}`;
+    
+    // Calculate text width to align it perfectly
+    const textWidth = helveticaFont.widthOfTextAtSize(batesString, fontSize);
+    
+    const margin = 25; // padding from page edges
+    let x = margin;
+    let y = margin;
+    
+    switch (options.position) {
+      case "topLeft":
+        x = margin;
+        y = height - margin - fontSize;
+        break;
+      case "topCenter":
+        x = (width - textWidth) / 2;
+        y = height - margin - fontSize;
+        break;
+      case "topRight":
+        x = width - margin - textWidth;
+        y = height - margin - fontSize;
+        break;
+      case "bottomLeft":
+        x = margin;
+        y = margin;
+        break;
+      case "bottomCenter":
+        x = (width - textWidth) / 2;
+        y = margin;
+        break;
+      case "bottomRight":
+        x = width - margin - textWidth;
+        y = margin;
+        break;
+    }
+    
+    page.drawText(batesString, {
+      x,
+      y,
+      size: fontSize,
+      font: helveticaFont,
+      color: rgb(r, g, b),
+    });
+  }
+  
+  return await pdfDoc.save();
+};

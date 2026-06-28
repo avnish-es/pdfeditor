@@ -9,6 +9,7 @@ import {
   splitPdf,
   addWatermarkText,
   encryptPdf,
+  applyBatesNumbering,
 } from "./pdfOperations";
 
 // Helper to create a dummy PDF with N pages
@@ -119,5 +120,22 @@ describe("pdfOperations Utility", () => {
     // Load the PDF to verify it remains valid
     const doc = await PDFDocument.load(encryptedBytes);
     expect(doc.getPageCount()).toBe(1);
+  });
+
+  it("should apply Bates numbering to all pages", async () => {
+    const pdfBytes = await createDummyPdf(3);
+    
+    const resultBytes = await applyBatesNumbering(pdfBytes, {
+      prefix: "BATES-",
+      suffix: "-LAW",
+      startNumber: 10,
+      paddingLength: 4,
+      position: "bottomCenter",
+      fontSize: 12,
+      color: "#0000ff",
+    });
+    
+    const resultDoc = await PDFDocument.load(resultBytes);
+    expect(resultDoc.getPageCount()).toBe(3);
   });
 });

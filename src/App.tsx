@@ -10,6 +10,7 @@ import { SignaturePad } from "./components/SignaturePad";
 import { OcrPanel } from "./components/OcrPanel";
 import { ComparePanel } from "./components/ComparePanel";
 import { SecurityPanel } from "./components/SecurityPanel";
+import { BatesDialog } from "./components/BatesDialog";
 import { Dialog } from "./components/ui/Dialog";
 import { Button } from "./components/ui/Button";
 import {
@@ -23,6 +24,7 @@ import {
   compressPdf,
   mergePdfs,
   splitPdf,
+  applyBatesNumbering,
 } from "./utils/pdfOperations";
 import { loadPdfDocument } from "./utils/pdfEngine";
 import { Upload, FileText, Trash2, ArrowUp, ArrowDown } from "lucide-react";
@@ -64,6 +66,7 @@ export default function App() {
   const [isMergeOpen, setIsMergeOpen] = useState(false);
   const [isSplitOpen, setIsSplitOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [isBatesOpen, setIsBatesOpen] = useState(false);
 
   // UX Feedback states
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -439,6 +442,36 @@ export default function App() {
     }
   };
 
+  // 6.5. Apply Bates Numbering Handler
+  const handleApplyBates = async (options: {
+    prefix: string;
+    suffix: string;
+    startNumber: number;
+    paddingLength: number;
+    position: "topLeft" | "topCenter" | "topRight" | "bottomLeft" | "bottomCenter" | "bottomRight";
+    fontSize: number;
+    color: string;
+  }) => {
+    if (!pdfFile) return;
+    try {
+      setIsExporting(true);
+      setExportStatus("Applying Bates numbering...");
+      const fileBytes = new Uint8Array(await pdfFile.arrayBuffer());
+      const stampedBytes = await applyBatesNumbering(fileBytes, options);
+      const newFile = new File([stampedBytes as any], pdfFile.name, { type: "application/pdf" });
+      setPdfFile(newFile);
+      const doc = await loadPdfDocument(newFile);
+      setPdfDocument(doc);
+      showToast("Bates numbering applied successfully!", "success");
+    } catch (err) {
+      console.error("Bates error:", err);
+      showToast("Failed to apply Bates numbering", "warning");
+    } finally {
+      setIsExporting(false);
+      setExportStatus("");
+    }
+  };
+
   // 7. Export / Flatten PDF Handler
   const handleExport = async () => {
     if (!pdfFile || !pdfDocument) return;
@@ -594,6 +627,7 @@ export default function App() {
           onOpenSignatureDialog={() => setIsSignatureOpen(true)}
           onRunOcr={() => setIsOcrOpen(true)}
           onTriggerCompress={handleCompressPdf}
+          onBatesClick={() => setIsBatesOpen(true)}
         />
 
         {/* Thumbnails Panel */}
@@ -867,6 +901,12 @@ export default function App() {
           </div>
         ))}
       </div>
+      {/* Bates Stamping Modal */}
+      <BatesDialog
+        isOpen={isBatesOpen}
+        onClose={() => setIsBatesOpen(false)}
+        onApplyBates={handleApplyBates}
+      />
     </div>
   );
 }
