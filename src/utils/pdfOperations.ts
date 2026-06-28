@@ -287,22 +287,24 @@ export const saveEditedPdf = async (
 
 /**
  * Overlays transparent PNG images (representing Fabric.js edits) onto corresponding PDF pages.
- * Also applies solid black redaction rectangles.
+ * Also applies solid black redaction rectangles and creates interactive PDF form fields.
  */
 export const overlayEditsOnPdf = async (
   originalPdfBytes: Uint8Array,
   pageEdits: { [pageNumber: number]: string }, // pageNumber -> transparent PNG dataURL
-  redactions: { [pageNumber: number]: { x: number; y: number; width: number; height: number }[] } = {}
+  redactions: { [pageNumber: number]: { x: number; y: number; width: number; height: number }[] } = {},
+  formFields: { [pageNumber: number]: { type: "text" | "checkbox"; x: number; y: number; width: number; height: number }[] } = {}
 ): Promise<Uint8Array> => {
   const pdfDoc = await PDFDocument.load(originalPdfBytes);
   const pages = pdfDoc.getPages();
+  const form = pdfDoc.getForm();
   
   for (let i = 0; i < pages.length; i++) {
     const pageNum = i + 1;
     const page = pages[i];
     const { width: pageWidth, height: pageHeight } = page.getSize();
     
-    // Apply permanent black-out redactions
+    // 1. Apply permanent black-out redactions
     if (redactions[pageNum] && redactions[pageNum].length > 0) {
       for (const rect of redactions[pageNum]) {
         const pdfX = rect.x;
@@ -318,7 +320,33 @@ export const overlayEditsOnPdf = async (
       }
     }
     
-    // Apply transparent PNG overlay of annotations/edits
+    // 2. Apply interactive form fields
+    if (formFields[pageNum] && formFields[pageNum].length > 0) {
+      formFields[pageNum].forEach((field, index) => {
+        const pdfX = field.x;
+        const pdfY = pageHeight - field.y - field.height;
+        
+        if (field.type === "text") {
+          const textField = form.createTextField(`text_field_${pageNum}_${index}`);
+          textField.addToPage(page, {
+            x: pdfX,
+            y: pdfY,
+            width: field.width,
+            height: field.height,
+          });
+        } else if (field.type === "checkbox") {
+          const checkBox = form.createCheckBox(`checkbox_${pageNum}_${index}`);
+          checkBox.addToPage(page, {
+            x: pdfX,
+            y: pdfY,
+            width: field.width,
+            height: field.height,
+          });
+        }
+      });
+    }
+    
+    // 3. Apply transparent PNG overlay of annotations/edits
     const dataUrl = pageEdits[pageNum];
     if (dataUrl) {
       // Remove data:image/png;base64, prefix

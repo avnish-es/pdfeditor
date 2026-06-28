@@ -294,6 +294,7 @@ export default function App() {
 
       const pageEdits: { [page: number]: string } = {};
       const redactions: { [page: number]: { x: number; y: number; width: number; height: number }[] } = {};
+      const formFields: { [page: number]: { type: "text" | "checkbox"; x: number; y: number; width: number; height: number }[] } = {};
 
       // Create a temporary canvas element for offscreen rendering
       const tempCanvasEl = document.createElement("canvas");
@@ -315,11 +316,32 @@ export default function App() {
           }
         }
 
-        // Check if there are annotations to render as PNG (excluding redactions)
+        // Gather interactive form fields
+        if (savedState && savedState.objects) {
+          const formFieldObjs = savedState.objects.filter(
+            (obj: any) => obj.data?.type === "form-text" || obj.data?.type === "form-checkbox"
+          );
+          if (formFieldObjs.length > 0) {
+            formFields[pageNum] = formFieldObjs.map((obj: any) => ({
+              type: obj.data.type === "form-text" ? "text" : "checkbox",
+              x: obj.left,
+              y: obj.top,
+              width: obj.width * (obj.scaleX || 1),
+              height: obj.height * (obj.scaleY || 1),
+            }));
+          }
+        }
+
+        // Check if there are annotations to render as PNG (excluding redactions and form fields)
         const hasAnnotations =
           savedState &&
           savedState.objects &&
-          savedState.objects.some((obj: any) => obj.data?.type !== "redaction");
+          savedState.objects.some(
+            (obj: any) =>
+              obj.data?.type !== "redaction" &&
+              obj.data?.type !== "form-text" &&
+              obj.data?.type !== "form-checkbox"
+          );
 
         if (hasAnnotations) {
           setExportStatus(`Processing page ${pageNum} annotations...`);
@@ -336,9 +358,14 @@ export default function App() {
             height: viewport.height,
           });
 
-          // Clean redactions out of the PNG layer (they are applied as vector blackouts securely)
+          // Clean redactions and form fields out of the PNG layer (they are applied as actual PDF elements)
           const stateClone = JSON.parse(JSON.stringify(savedState));
-          stateClone.objects = stateClone.objects.filter((obj: any) => obj.data?.type !== "redaction");
+          stateClone.objects = stateClone.objects.filter(
+            (obj: any) =>
+              obj.data?.type !== "redaction" &&
+              obj.data?.type !== "form-text" &&
+              obj.data?.type !== "form-checkbox"
+          );
 
           await new Promise<void>((resolve) => {
             tempFCanvas.loadFromJSON(stateClone, () => {
@@ -363,8 +390,8 @@ export default function App() {
       setExportStatus("Compiling final PDF...");
       const originalBytes = new Uint8Array(await pdfFile.arrayBuffer());
 
-      // 1. Overlay annotations and redactions
-      let finalBytes = await overlayEditsOnPdf(originalBytes, pageEdits, redactions);
+      // 1. Overlay annotations, redactions and interactive form fields
+      let finalBytes = await overlayEditsOnPdf(originalBytes, pageEdits, redactions, formFields);
 
       // 2. Apply Password encryption if configured
       if (exportPassword) {
