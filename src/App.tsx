@@ -27,6 +27,7 @@ import {
   applyBatesNumbering,
 } from "./utils/pdfOperations";
 import { loadPdfDocument } from "./utils/pdfEngine";
+import { loadSession, saveSession } from "./utils/db";
 import { Upload, FileText, Trash2, ArrowUp, ArrowDown } from "lucide-react";
 
 interface Toast {
@@ -53,6 +54,7 @@ export default function App() {
     pushHistory,
     undo,
     redo,
+    selectedObject,
   } = usePdfStore();
 
   // Active Fabric Canvas reference
@@ -99,6 +101,35 @@ export default function App() {
       document.documentElement.classList.remove("dark");
     }
   }, []);
+
+  // 1. Restore session from IndexedDB on mount
+  useEffect(() => {
+    const restoreSession = async () => {
+      const session = await loadSession();
+      if (session && session.pdfFile) {
+        // Set PDF file and document in store
+        setPdfFile(session.pdfFile);
+        usePdfStore.setState({
+          canvasStates: session.canvasStates,
+          currentPage: session.currentPage,
+        });
+        
+        try {
+          const doc = await loadPdfDocument(session.pdfFile);
+          setPdfDocument(doc);
+          showToast("Session restored successfully!", "success");
+        } catch (err) {
+          console.error("Failed to restore PDF document:", err);
+        }
+      }
+    };
+    restoreSession();
+  }, [setPdfFile, setPdfDocument]);
+
+  // 2. Save session to IndexedDB on changes
+  useEffect(() => {
+    saveSession(pdfFile, canvasStates, currentPage);
+  }, [pdfFile, currentPage, canvasStates]);
 
   // Keyboard Shortcuts & Nudge Controls
   useEffect(() => {
@@ -652,8 +683,8 @@ export default function App() {
         {/* Central PDF Viewer Canvas */}
         <PdfCanvasViewer onCanvasInit={setFabricCanvas} />
 
-        {/* Right Properties Inspector */}
-        <RightProperties />
+        {/* Right Properties Inspector (Contextual) */}
+        {selectedObject && <RightProperties />}
       </div>
 
       {/* 3. EXPORT / PROCESSING OVERLAY */}

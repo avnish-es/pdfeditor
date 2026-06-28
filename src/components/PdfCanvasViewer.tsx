@@ -21,6 +21,7 @@ export const PdfCanvasViewer: React.FC<PdfCanvasViewerProps> = ({ onCanvasInit }
     saveCanvasState,
     setSelectedObject,
     pushHistory,
+    canvasVersion,
   } = usePdfStore();
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -106,6 +107,25 @@ export const PdfCanvasViewer: React.FC<PdfCanvasViewerProps> = ({ onCanvasInit }
       }
     };
   }, [pdfDocument, currentPage, zoom, rotation]);
+
+  // 1.5. Listen to undo/redo triggers to reload the canvas
+  useEffect(() => {
+    const fCanvas = fabricCanvasRef.current;
+    if (!fCanvas) return;
+
+    const store = usePdfStore.getState();
+    if (store.isHistoryTraversal) {
+      const savedState = canvasStates[currentPage];
+      fCanvas.clear();
+      if (savedState && savedState.objects && savedState.objects.length > 0) {
+        fCanvas.loadFromJSON(savedState, () => {
+          fCanvas.requestRenderAll();
+        });
+      } else {
+        fCanvas.requestRenderAll();
+      }
+    }
+  }, [canvasVersion, currentPage]);
 
   // 2. Respond to tool changes
   useEffect(() => {
@@ -505,17 +525,16 @@ export const PdfCanvasViewer: React.FC<PdfCanvasViewerProps> = ({ onCanvasInit }
       fontWeight: "normal",
     });
 
+    editableText.on("editing:exited", () => {
+      saveCanvasState(currentPage, fCanvas.toJSON());
+      pushHistory();
+    });
+
     fCanvas.add(editableText);
     fCanvas.setActiveObject(editableText);
     editableText.enterEditing();
     editableText.selectAll();
 
-    // 3. Save state & transition to select tool
-    pushHistory();
-    saveCanvasState(currentPage, fCanvas.toJSON());
-    
-    const state = usePdfStore.getState();
-    state.setActiveTool("select");
     setHoveredTextIndex(null);
   };
 

@@ -105,6 +105,8 @@ interface PdfStore {
   
   // Reset
   resetStore: () => void;
+  canvasVersion: number;
+  isHistoryTraversal: boolean;
 }
 
 const initialStates = {
@@ -132,6 +134,8 @@ const initialStates = {
   sidebarTab: "edit" as const,
   isCompareMode: false,
   comparePdfFile: null,
+  canvasVersion: 0,
+  isHistoryTraversal: false,
 };
 
 export const usePdfStore = create<PdfStore>((set, get) => ({
@@ -289,6 +293,8 @@ export const usePdfStore = create<PdfStore>((set, get) => ({
     set({
       undoStack: newUndoStack,
       redoStack: [], // Clear redo on new action
+      canvasVersion: get().canvasVersion + 1,
+      isHistoryTraversal: false,
     });
   },
 
@@ -309,6 +315,8 @@ export const usePdfStore = create<PdfStore>((set, get) => ({
       redoStack: newRedoStack,
       selectedObject: null,
       selectedObjectProperties: null,
+      canvasVersion: get().canvasVersion + 1,
+      isHistoryTraversal: true,
     });
   },
 
@@ -329,6 +337,8 @@ export const usePdfStore = create<PdfStore>((set, get) => ({
       redoStack: newRedoStack,
       selectedObject: null,
       selectedObjectProperties: null,
+      canvasVersion: get().canvasVersion + 1,
+      isHistoryTraversal: true,
     });
   },
 
