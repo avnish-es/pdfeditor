@@ -1,40 +1,101 @@
-import { useState, useEffect } from "react";
-import { fabric } from "fabric";
+import { lazy, Suspense, useState, useEffect } from "react";
 import { usePdfStore } from "./store/usePdfStore";
 import { TopToolbar } from "./components/TopToolbar";
 import { LeftSidebar } from "./components/LeftSidebar";
 import { RightProperties } from "./components/RightProperties";
 import { ThumbnailPanel } from "./components/ThumbnailPanel";
-import { PdfCanvasViewer } from "./components/PdfCanvasViewer";
-import { SignaturePad } from "./components/SignaturePad";
-import { OcrPanel } from "./components/OcrPanel";
-import { ComparePanel } from "./components/ComparePanel";
-import { SecurityPanel } from "./components/SecurityPanel";
-import { BatesDialog } from "./components/BatesDialog";
 import { Dialog } from "./components/ui/Dialog";
 import { Button } from "./components/ui/Button";
-import {
-  deletePages,
-  insertBlankPage,
-  rotatePage,
-  reorderPages,
-  extractPages,
-  overlayEditsOnPdf,
-  encryptPdf,
-  compressPdf,
-  mergePdfs,
-  splitPdf,
-  applyBatesNumbering,
-} from "./utils/pdfOperations";
-import { loadPdfDocument } from "./utils/pdfEngine";
+import { loadPdfDocument, getPageTextItems } from "./utils/pdfEngine";
+import { buildExportName, buildTimestampSuffix } from "./utils/exportNames";
+import { buildSearchResults } from "./utils/documentSearch";
 import { loadSession, saveSession } from "./utils/db";
 import { Upload, FileText, Trash2, ArrowUp, ArrowDown } from "lucide-react";
+
+const SignaturePad = lazy(() => import("./components/SignaturePad").then((module) => ({ default: module.SignaturePad })));
+const OcrPanel = lazy(() => import("./components/OcrPanel").then((module) => ({ default: module.OcrPanel })));
+const ComparePanel = lazy(() => import("./components/ComparePanel").then((module) => ({ default: module.ComparePanel })));
+const SecurityPanel = lazy(() => import("./components/SecurityPanel").then((module) => ({ default: module.SecurityPanel })));
+const BatesDialog = lazy(() => import("./components/BatesDialog").then((module) => ({ default: module.BatesDialog })));
+const PdfCanvasViewer = lazy(() => import("./components/PdfCanvasViewer").then((module) => ({ default: module.PdfCanvasViewer })));
 
 interface Toast {
   id: string;
   message: string;
   type: "success" | "info" | "warning";
 }
+
+function PanelFallback() {
+  return (
+    <div className="flex min-h-[180px] items-center justify-center rounded-xl border border-border bg-muted/20 text-sm text-muted-foreground">
+      Loading panel...
+    </div>
+  );
+}
+
+const loadPdfOperations = () => import("./utils/pdfOperations");
+const loadFabric = () => import("fabric");
+
+let workspacePrefetchPromise: Promise<unknown> | null = null;
+let ocrPrefetchPromise: Promise<unknown> | null = null;
+let comparePrefetchPromise: Promise<unknown> | null = null;
+let securityPrefetchPromise: Promise<unknown> | null = null;
+let signaturePrefetchPromise: Promise<unknown> | null = null;
+let batesPrefetchPromise: Promise<unknown> | null = null;
+let pdfOpsPrefetchPromise: Promise<unknown> | null = null;
+
+const prefetchWorkspaceAssets = () => {
+  workspacePrefetchPromise ??= Promise.all([
+    import("./components/PdfCanvasViewer"),
+    loadPdfOperations(),
+    loadFabric(),
+  ]);
+
+  return workspacePrefetchPromise;
+};
+
+const prefetchOcrAssets = () => {
+  ocrPrefetchPromise ??= Promise.all([import("./components/OcrPanel"), import("tesseract.js")]);
+
+  return ocrPrefetchPromise;
+};
+
+const prefetchCompareAssets = () => {
+  comparePrefetchPromise ??= import("./components/ComparePanel");
+  return comparePrefetchPromise;
+};
+
+const prefetchSecurityAssets = () => {
+  securityPrefetchPromise ??= import("./components/SecurityPanel");
+  return securityPrefetchPromise;
+};
+
+const prefetchSignatureAssets = () => {
+  signaturePrefetchPromise ??= import("./components/SignaturePad");
+  return signaturePrefetchPromise;
+};
+
+const prefetchBatesAssets = () => {
+  batesPrefetchPromise ??= import("./components/BatesDialog");
+  return batesPrefetchPromise;
+};
+
+const prefetchPdfOps = () => {
+  pdfOpsPrefetchPromise ??= loadPdfOperations();
+  return pdfOpsPrefetchPromise;
+};
+
+const warmEditorChunks = () => {
+  void Promise.all([
+    prefetchWorkspaceAssets(),
+    prefetchOcrAssets(),
+    prefetchCompareAssets(),
+    prefetchSecurityAssets(),
+    prefetchSignatureAssets(),
+    prefetchBatesAssets(),
+    prefetchPdfOps(),
+  ]);
+};
 
 export default function App() {
   const {
@@ -43,6 +104,8 @@ export default function App() {
     currentPage,
     numPages,
     canvasStates,
+    pageLabels,
+    bookmarks,
     zoom,
     setCurrentPage,
     setPdfFile,
@@ -58,7 +121,7 @@ export default function App() {
   } = usePdfStore();
 
   // Active Fabric Canvas reference
-  const [fabricCanvas, setFabricCanvas] = useState<fabric.Canvas | null>(null);
+  const [fabricCanvas, setFabricCanvas] = useState<import("fabric").fabric.Canvas | null>(null);
 
   // Dialog open/close states
   const [isSignatureOpen, setIsSignatureOpen] = useState(false);
@@ -69,6 +132,8 @@ export default function App() {
   const [isSplitOpen, setIsSplitOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isBatesOpen, setIsBatesOpen] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isMobileToolsOpen, setIsMobileToolsOpen] = useState(false);
 
   // UX Feedback states
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -82,6 +147,11 @@ export default function App() {
   const [exportPassword, setExportPassword] = useState<string>("");
   const [isExporting, setIsExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState("");
+  const [saveStatus, setSaveStatus] = useState("All changes saved");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<Array<{ pageNumber: number; snippet: string; matchCount: number }>>([]);
+  const [searchStatus, setSearchStatus] = useState("Search across the loaded PDF");
+  const [isSearching, setIsSearching] = useState(false);
 
   // Toast Helper
   const showToast = (message: string, type: "success" | "info" | "warning" = "success") => {
@@ -90,6 +160,40 @@ export default function App() {
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 3000);
+  };
+
+  const runDocumentSearch = async () => {
+    if (!pdfDocument || !searchQuery.trim()) {
+      setSearchResults([]);
+      setSearchStatus("Enter a word or phrase to search");
+      return;
+    }
+
+    try {
+      setIsSearching(true);
+      setSearchStatus("Searching document...");
+      const pages: Array<{ pageNumber: number; text: string }> = [];
+
+      for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+        const textItems = await getPageTextItems(pdfDocument, pageNum, 1.0, 0);
+        pages.push({ pageNumber: pageNum, text: textItems.map((item) => item.text).join(" ") });
+      }
+
+      const results = buildSearchResults(pages, searchQuery);
+
+      setSearchResults(results);
+      setSearchStatus(
+        results.length > 0
+          ? `${results.length} page${results.length === 1 ? "" : "s"} matched`
+          : "No matches found"
+      );
+    } catch (err) {
+      console.error("Search error:", err);
+      setSearchStatus("Search failed. Try again.");
+      showToast("Search failed", "warning");
+    } finally {
+      setIsSearching(false);
+    }
   };
 
   // Sync dark mode class on mount
@@ -102,6 +206,27 @@ export default function App() {
     }
   }, []);
 
+  useEffect(() => {
+    let warmed = false;
+
+    const triggerWarmup = () => {
+      if (warmed) return;
+      warmed = true;
+      warmEditorChunks();
+    };
+
+    const options: AddEventListenerOptions = { once: true, passive: true };
+    window.addEventListener("pointerdown", triggerWarmup, options);
+    window.addEventListener("keydown", triggerWarmup, options);
+    window.addEventListener("touchstart", triggerWarmup, options);
+
+    return () => {
+      window.removeEventListener("pointerdown", triggerWarmup);
+      window.removeEventListener("keydown", triggerWarmup);
+      window.removeEventListener("touchstart", triggerWarmup);
+    };
+  }, []);
+
   // 1. Restore session from IndexedDB on mount
   useEffect(() => {
     const restoreSession = async () => {
@@ -112,6 +237,8 @@ export default function App() {
         usePdfStore.setState({
           canvasStates: session.canvasStates,
           currentPage: session.currentPage,
+          pageLabels: session.pageLabels || {},
+          bookmarks: session.bookmarks || [],
         });
         
         try {
@@ -128,8 +255,20 @@ export default function App() {
 
   // 2. Save session to IndexedDB on changes
   useEffect(() => {
-    saveSession(pdfFile, canvasStates, currentPage);
-  }, [pdfFile, currentPage, canvasStates]);
+    if (!pdfFile) {
+      setSaveStatus("Open a PDF to start editing");
+      return;
+    }
+
+    setSaveStatus("Saving...");
+    const timeoutId = window.setTimeout(() => {
+      void saveSession(pdfFile, canvasStates, currentPage, pageLabels, bookmarks).then(() => {
+        setSaveStatus("Saved just now");
+      });
+    }, 300);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [pdfFile, currentPage, canvasStates, pageLabels, bookmarks]);
 
   // Keyboard Shortcuts & Nudge Controls
   useEffect(() => {
@@ -244,7 +383,7 @@ export default function App() {
         const doc = await loadPdfDocument(file);
         setPdfDocument(doc);
         showToast("PDF loaded successfully!", "success");
-      } catch (err) {
+      } catch {
         showToast("Failed to load PDF", "warning");
       }
     } else {
@@ -258,8 +397,9 @@ export default function App() {
     if (!file || !fabricCanvas) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       const imgUrl = event.target?.result as string;
+      const { fabric } = await loadFabric();
       fabric.Image.fromURL(imgUrl, (img) => {
         img.scaleToWidth(200);
         fabricCanvas.add(img);
@@ -278,6 +418,7 @@ export default function App() {
   const handleInsertBlankPage = async () => {
     if (!pdfFile) return;
     try {
+      const { insertBlankPage } = await loadPdfOperations();
       const bytes = new Uint8Array(await pdfFile.arrayBuffer());
       const newBytes = await insertBlankPage(bytes, currentPage);
       const newFile = new File([newBytes as any], pdfFile.name, { type: "application/pdf" });
@@ -299,6 +440,7 @@ export default function App() {
     }
     if (window.confirm(`Are you sure you want to delete Page ${pageNum}?`)) {
       try {
+        const { deletePages } = await loadPdfOperations();
         const bytes = new Uint8Array(await pdfFile.arrayBuffer());
         const newBytes = await deletePages(bytes, [pageNum - 1]);
         const newFile = new File([newBytes as any], pdfFile.name, { type: "application/pdf" });
@@ -317,6 +459,7 @@ export default function App() {
   const handleRotatePage = async (pageNum: number = currentPage) => {
     if (!pdfFile) return;
     try {
+      const { rotatePage } = await loadPdfOperations();
       const bytes = new Uint8Array(await pdfFile.arrayBuffer());
       const newBytes = await rotatePage(bytes, pageNum - 1, 90);
       const newFile = new File([newBytes as any], pdfFile.name, { type: "application/pdf" });
@@ -337,6 +480,7 @@ export default function App() {
     if (newIndex < 0 || newIndex >= numPages) return;
 
     try {
+      const { reorderPages } = await loadPdfOperations();
       const order = Array.from({ length: numPages }, (_, i) => i);
       order[targetIndex] = newIndex;
       order[newIndex] = targetIndex;
@@ -358,13 +502,14 @@ export default function App() {
   const handleExtractPages = async () => {
     if (!pdfFile) return;
     try {
+      const { extractPages } = await loadPdfOperations();
       const bytes = new Uint8Array(await pdfFile.arrayBuffer());
       const newBytes = await extractPages(bytes, [currentPage - 1]);
       const blob = new Blob([newBytes as any], { type: "application/pdf" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `extracted_page_${currentPage}.pdf`;
+      link.download = buildExportName(pdfFile.name, `page-${currentPage}-extract`);
       link.click();
       URL.revokeObjectURL(url);
       showToast("Page extracted successfully", "success");
@@ -375,8 +520,9 @@ export default function App() {
   };
 
   // 3. Signature Handler
-  const handleSaveSignature = (signatureDataUrl: string) => {
+  const handleSaveSignature = async (signatureDataUrl: string) => {
     if (!fabricCanvas) return;
+    const { fabric } = await loadFabric();
     fabric.Image.fromURL(signatureDataUrl, (img) => {
       img.scaleToWidth(150);
       const vCenter = fabricCanvas.getVpCenter();
@@ -403,12 +549,13 @@ export default function App() {
     try {
       setIsExporting(true);
       setExportStatus("Merging PDF documents...");
+      const { mergePdfs } = await loadPdfOperations();
       const mergedBytes = await mergePdfs(mergeFiles);
       const blob = new Blob([mergedBytes as any], { type: "application/pdf" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = "merged_document.pdf";
+      link.download = `merged_document_${buildTimestampSuffix()}.pdf`;
       link.click();
       URL.revokeObjectURL(url);
       setIsMergeOpen(false);
@@ -433,6 +580,7 @@ export default function App() {
     try {
       setIsExporting(true);
       setExportStatus("Splitting PDF document...");
+      const { splitPdf } = await loadPdfOperations();
       const fileBytes = new Uint8Array(await pdfFile.arrayBuffer());
       const results = await splitPdf(fileBytes, splitRanges);
       
@@ -441,7 +589,7 @@ export default function App() {
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
-        link.download = result.name;
+        link.download = `${result.name.replace(/\.pdf$/i, "")}_${buildTimestampSuffix()}.pdf`;
         link.click();
         URL.revokeObjectURL(url);
       }
@@ -463,6 +611,7 @@ export default function App() {
     try {
       setIsExporting(true);
       setExportStatus("Optimizing PDF structure...");
+      const { compressPdf } = await loadPdfOperations();
       const fileBytes = new Uint8Array(await pdfFile.arrayBuffer());
       const compressedBytes = await compressPdf(fileBytes);
       
@@ -470,7 +619,7 @@ export default function App() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = pdfFile.name.replace(".pdf", "_compressed.pdf");
+      link.download = buildExportName(pdfFile.name, "compressed");
       link.click();
       URL.revokeObjectURL(url);
       showToast("PDF compressed successfully!", "success");
@@ -497,6 +646,7 @@ export default function App() {
     try {
       setIsExporting(true);
       setExportStatus("Applying Bates numbering...");
+      const { applyBatesNumbering } = await loadPdfOperations();
       const fileBytes = new Uint8Array(await pdfFile.arrayBuffer());
       const stampedBytes = await applyBatesNumbering(fileBytes, options);
       const newFile = new File([stampedBytes as any], pdfFile.name, { type: "application/pdf" });
@@ -520,6 +670,7 @@ export default function App() {
     try {
       setIsExporting(true);
       setExportStatus("Generating high-resolution annotations...");
+      const { fabric } = await loadFabric();
 
       const pageEdits: { [page: number]: string } = {};
       const redactions: { [page: number]: { x: number; y: number; width: number; height: number }[] } = {};
@@ -613,6 +764,7 @@ export default function App() {
       setExportStatus("Compiling final PDF...");
       const originalBytes = new Uint8Array(await pdfFile.arrayBuffer());
 
+      const { overlayEditsOnPdf, encryptPdf, compressPdf } = await loadPdfOperations();
       let finalBytes = await overlayEditsOnPdf(originalBytes, pageEdits, redactions, formFields);
 
       if (exportPassword) {
@@ -626,13 +778,15 @@ export default function App() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = pdfFile.name.replace(".pdf", "_edited.pdf");
+      link.download = buildExportName(pdfFile.name, "edited");
       link.click();
       URL.revokeObjectURL(url);
 
+      setExportStatus("Export complete");
       showToast("PDF exported successfully!", "success");
     } catch (err) {
       console.error("Export error:", err);
+      setExportStatus("Export failed. Please try again.");
       showToast("Failed to export PDF", "warning");
     } finally {
       setIsExporting(false);
@@ -654,10 +808,18 @@ export default function App() {
         onSplitClick={() => setIsSplitOpen(true)}
         onSecurityClick={() => setIsSecurityOpen(true)}
         onHelpClick={() => setIsHelpOpen(true)}
+        onSearchClick={() => setIsSearchOpen(true)}
+        onMobileToolsClick={() => setIsMobileToolsOpen(true)}
+        onPrefetchWorkspace={prefetchWorkspaceAssets}
+        onPrefetchOcr={prefetchOcrAssets}
+        onPrefetchCompare={prefetchCompareAssets}
+        onPrefetchPdfOps={prefetchPdfOps}
+        onPrefetchSecurity={prefetchSecurityAssets}
+        saveStatus={saveStatus}
       />
 
       {/* 2. MAIN CONTENT AREA */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
         {/* Left Toolbar + Settings */}
         <LeftSidebar
           onAddImage={handleAddImage}
@@ -669,22 +831,35 @@ export default function App() {
           onRunOcr={() => setIsOcrOpen(true)}
           onTriggerCompress={handleCompressPdf}
           onBatesClick={() => setIsBatesOpen(true)}
+          onPrefetchSignature={prefetchSignatureAssets}
+          onPrefetchOcr={prefetchOcrAssets}
+          onPrefetchPdfOps={prefetchPdfOps}
+          onPrefetchBates={prefetchBatesAssets}
+          onPrefetchSecurity={prefetchSecurityAssets}
         />
 
         {/* Thumbnails Panel */}
         {pdfDocument && (
+          <div className="hidden lg:flex">
           <ThumbnailPanel
             onDeletePage={handleDeletePage}
             onRotatePage={handleRotatePage}
             onMovePage={handleMovePage}
           />
+          </div>
         )}
 
         {/* Central PDF Viewer Canvas */}
-        <PdfCanvasViewer onCanvasInit={setFabricCanvas} />
+        <Suspense fallback={<PanelFallback />}>
+          <PdfCanvasViewer onCanvasInit={setFabricCanvas} />
+        </Suspense>
 
         {/* Right Properties Inspector (Contextual) */}
-        {selectedObject && <RightProperties />}
+        {selectedObject && (
+          <div className="hidden xl:flex">
+            <RightProperties />
+          </div>
+        )}
       </div>
 
       {/* 3. EXPORT / PROCESSING OVERLAY */}
@@ -716,25 +891,145 @@ export default function App() {
       )}
 
       {/* 5. DIALOGS & MODALS */}
-      {/* Signature Pad */}
-      <SignaturePad
-        isOpen={isSignatureOpen}
-        onClose={() => setIsSignatureOpen(false)}
-        onSaveSignature={handleSaveSignature}
-      />
+      <Suspense fallback={<PanelFallback />}>
+        <SignaturePad
+          isOpen={isSignatureOpen}
+          onClose={() => setIsSignatureOpen(false)}
+          onSaveSignature={handleSaveSignature}
+        />
 
-      {/* OCR Text Recognition */}
-      <OcrPanel isOpen={isOcrOpen} onClose={() => setIsOcrOpen(false)} />
+        <OcrPanel isOpen={isOcrOpen} onClose={() => setIsOcrOpen(false)} />
 
-      {/* PDF Comparison */}
-      <ComparePanel isOpen={isCompareOpen} onClose={() => setIsCompareOpen(false)} />
+        <ComparePanel isOpen={isCompareOpen} onClose={() => setIsCompareOpen(false)} />
 
-      {/* Security & Watermarking */}
-      <SecurityPanel
-        isOpen={isSecurityOpen}
-        onClose={() => setIsSecurityOpen(false)}
-        onApplyPassword={setExportPassword}
-      />
+        <SecurityPanel
+          isOpen={isSecurityOpen}
+          onClose={() => setIsSecurityOpen(false)}
+          onApplyPassword={setExportPassword}
+        />
+      </Suspense>
+
+      {/* Search */}
+      <Dialog
+        isOpen={isSearchOpen}
+        onClose={() => setIsSearchOpen(false)}
+        title="Find in Document"
+        maxWidth="lg"
+        footer={
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setIsSearchOpen(false)}>
+              Close
+            </Button>
+            <Button variant="primary" onClick={runDocumentSearch} disabled={isSearching || !searchQuery.trim()}>
+              {isSearching ? "Searching..." : "Search"}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-muted-foreground">
+            Search the text extracted from the loaded PDF. Matches are grouped by page.
+          </p>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void runDocumentSearch();
+                }
+              }}
+              placeholder="Search for a word or phrase"
+              className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+            <Button variant="primary" onClick={runDocumentSearch} disabled={isSearching || !searchQuery.trim()}>
+              {isSearching ? "Searching..." : "Search"}
+            </Button>
+          </div>
+          <div className="text-xs text-muted-foreground">{searchStatus}</div>
+          <div className="space-y-2 max-h-[320px] overflow-y-auto">
+            {searchResults.map((result) => (
+              <button
+                key={`${result.pageNumber}-${result.snippet}`}
+                onClick={() => {
+                  setCurrentPage(result.pageNumber);
+                  setIsSearchOpen(false);
+                }}
+                className="w-full rounded-lg border border-border bg-muted/20 p-3 text-left transition-colors hover:border-primary/50 hover:bg-muted/40"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-semibold text-foreground">Page {result.pageNumber}</span>
+                  <span className="text-[11px] text-muted-foreground">{result.matchCount} match{result.matchCount === 1 ? "" : "es"}</span>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground overflow-hidden">{result.snippet}</p>
+              </button>
+            ))}
+            {searchResults.length === 0 && searchStatus === "No matches found" && (
+              <div className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+                No matching text was found in the document.
+              </div>
+            )}
+          </div>
+        </div>
+      </Dialog>
+
+      {/* Mobile Tools Drawer */}
+      <Dialog
+        isOpen={isMobileToolsOpen}
+        onClose={() => setIsMobileToolsOpen(false)}
+        title="Tools & Pages"
+        maxWidth="5xl"
+      >
+        <div className="space-y-4 lg:hidden">
+          <div className="rounded-xl border border-border bg-card overflow-hidden">
+            <div className="max-h-[70vh] overflow-auto">
+              <LeftSidebar
+                onAddImage={handleAddImage}
+                onInsertBlankPage={handleInsertBlankPage}
+                onDeletePage={() => handleDeletePage()}
+                onRotatePage={() => handleRotatePage()}
+                onExtractPages={handleExtractPages}
+                onOpenSignatureDialog={() => setIsSignatureOpen(true)}
+                onRunOcr={() => setIsOcrOpen(true)}
+                onTriggerCompress={handleCompressPdf}
+                onBatesClick={() => setIsBatesOpen(true)}
+                onPrefetchSignature={prefetchSignatureAssets}
+                onPrefetchOcr={prefetchOcrAssets}
+                onPrefetchPdfOps={prefetchPdfOps}
+                onPrefetchBates={prefetchBatesAssets}
+                onPrefetchSecurity={prefetchSecurityAssets}
+              />
+            </div>
+          </div>
+
+          {pdfDocument && (
+            <div className="rounded-xl border border-border bg-card overflow-hidden">
+              <div className="p-3 border-b border-border text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                Pages
+              </div>
+              <div className="max-h-[50vh] overflow-auto">
+                <ThumbnailPanel
+                  onDeletePage={handleDeletePage}
+                  onRotatePage={handleRotatePage}
+                  onMovePage={handleMovePage}
+                />
+              </div>
+            </div>
+          )}
+
+          {selectedObject && (
+            <div className="rounded-xl border border-border bg-card overflow-hidden">
+              <div className="p-3 border-b border-border text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                Properties
+              </div>
+              <div className="max-h-[55vh] overflow-auto">
+                <RightProperties />
+              </div>
+            </div>
+          )}
+        </div>
+      </Dialog>
 
       {/* Help & Keyboard Shortcuts Dialog */}
       <Dialog
@@ -943,11 +1238,13 @@ export default function App() {
         ))}
       </div>
       {/* Bates Stamping Modal */}
-      <BatesDialog
-        isOpen={isBatesOpen}
-        onClose={() => setIsBatesOpen(false)}
-        onApplyBates={handleApplyBates}
-      />
+      <Suspense fallback={<PanelFallback />}>
+        <BatesDialog
+          isOpen={isBatesOpen}
+          onClose={() => setIsBatesOpen(false)}
+          onApplyBates={handleApplyBates}
+        />
+      </Suspense>
     </div>
   );
 }

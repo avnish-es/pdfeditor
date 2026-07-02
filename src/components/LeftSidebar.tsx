@@ -23,6 +23,8 @@ import {
   Image as ImageIcon,
   Heading,
   Hash,
+  BookOpen,
+  Bookmark,
 } from "lucide-react";
 import { usePdfStore } from "../store/usePdfStore";
 import type { ToolType, ShapeType } from "../store/usePdfStore";
@@ -38,6 +40,11 @@ interface LeftSidebarProps {
   onRunOcr: () => void;
   onTriggerCompress: () => void;
   onBatesClick: () => void;
+  onPrefetchSignature: () => void;
+  onPrefetchOcr: () => void;
+  onPrefetchPdfOps: () => void;
+  onPrefetchBates: () => void;
+  onPrefetchSecurity: () => void;
 }
 
 export const LeftSidebar: React.FC<LeftSidebarProps> = ({
@@ -50,6 +57,11 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
   onRunOcr,
   onTriggerCompress,
   onBatesClick,
+  onPrefetchSignature,
+  onPrefetchOcr,
+  onPrefetchPdfOps,
+  onPrefetchBates,
+  onPrefetchSecurity,
 }) => {
   const {
     activeTool,
@@ -58,11 +70,20 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
     drawWidth,
     sidebarTab,
     pdfFile,
+    numPages,
+    currentPage,
+    pageLabels,
+    bookmarks,
     setActiveTool,
     setSelectedShape,
     setDrawColor,
     setDrawWidth,
     setSidebarTab,
+    setPageLabel,
+    clearPageLabel,
+    addBookmark,
+    updateBookmark,
+    removeBookmark,
   } = usePdfStore();
 
   const imageInputRef = React.useRef<HTMLInputElement>(null);
@@ -71,6 +92,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
     { id: "edit", label: "Edit", icon: Type },
     { id: "annotate", label: "Comment", icon: Highlighter },
     { id: "pages", label: "Pages", icon: Compass },
+    { id: "outline", label: "Outline", icon: BookOpen },
     { id: "forms", label: "Forms", icon: FileCheck },
     { id: "sign", label: "Sign", icon: Signature },
     { id: "advanced", label: "AI & Tools", icon: Cpu },
@@ -330,6 +352,8 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                     variant="outline"
                     className="justify-start gap-2 h-9 text-xs"
                     onClick={onRotatePage}
+                    onMouseEnter={onPrefetchPdfOps}
+                    onFocus={onPrefetchPdfOps}
                   >
                     <RotateCw className="h-3.5 w-3.5 text-blue-500" />
                     Rotate 90° Clockwise
@@ -338,6 +362,8 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                     variant="outline"
                     className="justify-start gap-2 h-9 text-xs"
                     onClick={onExtractPages}
+                    onMouseEnter={onPrefetchPdfOps}
+                    onFocus={onPrefetchPdfOps}
                   >
                     <FileDown className="h-3.5 w-3.5 text-purple-500" />
                     Extract Page
@@ -346,10 +372,100 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                     variant="outline"
                     className="justify-start gap-2 h-9 text-xs"
                     onClick={onBatesClick}
+                    onMouseEnter={onPrefetchBates}
+                    onFocus={onPrefetchBates}
                   >
                     <Hash className="h-3.5 w-3.5 text-amber-500" />
                     Bates Numbering
                   </Button>
+                </div>
+              </div>
+            )}
+
+            {/* TAB: OUTLINE */}
+            {sidebarTab === "outline" && (
+              <div className="space-y-4">
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
+                    Page Labels
+                  </h4>
+                  <div className="max-h-[260px] overflow-y-auto space-y-2 pr-1">
+                    {Array.from({ length: Math.max(1, numPages) }, (_, i) => i + 1).map((pageNum) => (
+                      <div key={pageNum} className="space-y-1 rounded-lg border border-border bg-muted/10 p-2">
+                        <div className="flex items-center justify-between gap-2 text-[11px] font-semibold text-muted-foreground">
+                          <span>Page {pageNum}</span>
+                          <span className={currentPage === pageNum ? "text-primary" : ""}>
+                            {currentPage === pageNum ? "Current" : ""}
+                          </span>
+                        </div>
+                        <input
+                          value={pageLabels[pageNum] || ""}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            if (value.trim()) {
+                              setPageLabel(pageNum, value);
+                            } else {
+                              clearPageLabel(pageNum);
+                            }
+                          }}
+                          placeholder={`Label for page ${pageNum}`}
+                          className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="border-t border-border pt-4 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                      Bookmarks
+                    </h4>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs gap-1"
+                      onClick={() => addBookmark(pageLabels[currentPage] || `Page ${currentPage}`, currentPage)}
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Add Current Page
+                    </Button>
+                  </div>
+
+                  {bookmarks.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
+                      Add bookmarks to create a simple document outline.
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1">
+                      {bookmarks.map((bookmark) => (
+                        <div key={bookmark.id} className="rounded-lg border border-border bg-muted/10 p-2 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <button
+                              type="button"
+                              onClick={() => usePdfStore.getState().setCurrentPage(bookmark.pageNumber)}
+                              className="flex items-center gap-1.5 text-left text-xs font-semibold text-foreground hover:text-primary"
+                            >
+                              <Bookmark className="h-3.5 w-3.5" />
+                              Page {bookmark.pageNumber}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => removeBookmark(bookmark.id)}
+                              className="text-[11px] font-semibold text-muted-foreground hover:text-destructive"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                          <input
+                            value={bookmark.title}
+                            onChange={(e) => updateBookmark(bookmark.id, e.target.value)}
+                            className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -397,6 +513,8 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                   variant="primary"
                   className="w-full justify-center gap-2 h-9 text-xs shadow-md"
                   onClick={onOpenSignatureDialog}
+                  onMouseEnter={onPrefetchSignature}
+                  onFocus={onPrefetchSignature}
                 >
                   <Signature className="h-4 w-4" />
                   Add New Signature
@@ -415,6 +533,8 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                     variant="outline"
                     className="justify-start gap-2 h-9 text-xs text-left"
                     onClick={onRunOcr}
+                    onMouseEnter={onPrefetchOcr}
+                    onFocus={onPrefetchOcr}
                   >
                     <Cpu className="h-3.5 w-3.5 text-yellow-500" />
                     Run OCR Text Recognition
@@ -423,6 +543,8 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                     variant="outline"
                     className="justify-start gap-2 h-9 text-xs"
                     onClick={onTriggerCompress}
+                    onMouseEnter={onPrefetchPdfOps}
+                    onFocus={onPrefetchPdfOps}
                   >
                     <ToggleLeft className="h-3.5 w-3.5 text-emerald-500" />
                     Compress PDF Size
@@ -445,6 +567,8 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                     variant={activeTool === "redact" ? "primary" : "outline"}
                     className="justify-start gap-2 h-9 text-xs text-destructive border-destructive/20 hover:bg-destructive/10"
                     onClick={() => handleToolClick("redact")}
+                    onMouseEnter={onPrefetchSecurity}
+                    onFocus={onPrefetchSecurity}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                     Redact (Permanent Blackout)

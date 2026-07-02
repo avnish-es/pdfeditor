@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { fabric } from "fabric";
 import { usePdfStore } from "../store/usePdfStore";
 import { renderPdfPage, getPageTextItems, type TextItemInfo } from "../utils/pdfEngine";
@@ -17,7 +17,6 @@ export const PdfCanvasViewer: React.FC<PdfCanvasViewerProps> = ({ onCanvasInit }
     selectedShape,
     drawColor,
     drawWidth,
-    canvasStates,
     saveCanvasState,
     setSelectedObject,
     pushHistory,
@@ -33,81 +32,6 @@ export const PdfCanvasViewer: React.FC<PdfCanvasViewerProps> = ({ onCanvasInit }
   const [textItems, setTextItems] = useState<TextItemInfo[]>([]);
   const [hoveredTextIndex, setHoveredTextIndex] = useState<number | null>(null);
 
-  // 1. Render PDF page and initialize Fabric Canvas
-  useEffect(() => {
-    let active = true;
-
-    const initPage = async () => {
-      if (!pdfDocument || !pdfCanvasRef.current || !fabricCanvasElRef.current) return;
-
-      try {
-        setLoading(true);
-        
-        // Clean up previous fabric canvas
-        if (fabricCanvasRef.current) {
-          fabricCanvasRef.current.dispose();
-          fabricCanvasRef.current = null;
-        }
-
-        // Render PDF page
-        const { width, height } = await renderPdfPage(
-          pdfDocument,
-          currentPage,
-          pdfCanvasRef.current,
-          zoom,
-          rotation
-        );
-
-        if (!active) return;
-
-        // Set overlay canvas size
-        fabricCanvasElRef.current.width = width;
-        fabricCanvasElRef.current.height = height;
-
-        // Initialize Fabric Canvas
-        const fCanvas = new fabric.Canvas(fabricCanvasElRef.current, {
-          width: width,
-          height: height,
-          selection: true,
-        });
-
-        fabricCanvasRef.current = fCanvas;
-        onCanvasInit(fCanvas);
-
-        // Load existing edits for this page if they exist
-        const savedState = canvasStates[currentPage];
-        if (savedState && savedState.objects && savedState.objects.length > 0) {
-          fCanvas.loadFromJSON(savedState, () => {
-            fCanvas.requestRenderAll();
-          });
-        }
-
-        // Setup Event Listeners
-        setupCanvasEvents(fCanvas);
-
-        // Load PDF text items for direct editing
-        const items = await getPageTextItems(pdfDocument, currentPage, zoom, rotation);
-        if (active) {
-          setTextItems(items);
-          setLoading(false);
-        }
-      } catch (err) {
-        console.error("Error rendering PDF or initializing canvas:", err);
-        if (active) setLoading(false);
-      }
-    };
-
-    initPage();
-
-    return () => {
-      active = false;
-      if (fabricCanvasRef.current) {
-        fabricCanvasRef.current.dispose();
-        fabricCanvasRef.current = null;
-      }
-    };
-  }, [pdfDocument, currentPage, zoom, rotation]);
-
   // 1.5. Listen to undo/redo triggers to reload the canvas
   useEffect(() => {
     const fCanvas = fabricCanvasRef.current;
@@ -115,7 +39,7 @@ export const PdfCanvasViewer: React.FC<PdfCanvasViewerProps> = ({ onCanvasInit }
 
     const store = usePdfStore.getState();
     if (store.isHistoryTraversal) {
-      const savedState = canvasStates[currentPage];
+      const savedState = usePdfStore.getState().canvasStates[currentPage];
       fCanvas.clear();
       if (savedState && savedState.objects && savedState.objects.length > 0) {
         fCanvas.loadFromJSON(savedState, () => {
@@ -171,7 +95,7 @@ export const PdfCanvasViewer: React.FC<PdfCanvasViewerProps> = ({ onCanvasInit }
   }, [activeTool, drawColor, drawWidth, selectedShape]);
 
   // Setup fabric events
-  const setupCanvasEvents = (fCanvas: fabric.Canvas) => {
+  const setupCanvasEvents = useCallback((fCanvas: fabric.Canvas) => {
     let isMouseDown = false;
     let startX = 0;
     let startY = 0;
@@ -493,7 +417,82 @@ export const PdfCanvasViewer: React.FC<PdfCanvasViewerProps> = ({ onCanvasInit }
         state.setActiveTool("select");
       }
     });
-  };
+  }, [currentPage, pushHistory, saveCanvasState, setSelectedObject]);
+
+  // 1. Render PDF page and initialize Fabric Canvas
+  useEffect(() => {
+    let active = true;
+
+    const initPage = async () => {
+      if (!pdfDocument || !pdfCanvasRef.current || !fabricCanvasElRef.current) return;
+
+      try {
+        setLoading(true);
+        
+        // Clean up previous fabric canvas
+        if (fabricCanvasRef.current) {
+          fabricCanvasRef.current.dispose();
+          fabricCanvasRef.current = null;
+        }
+
+        // Render PDF page
+        const { width, height } = await renderPdfPage(
+          pdfDocument,
+          currentPage,
+          pdfCanvasRef.current,
+          zoom,
+          rotation
+        );
+
+        if (!active) return;
+
+        // Set overlay canvas size
+        fabricCanvasElRef.current.width = width;
+        fabricCanvasElRef.current.height = height;
+
+        // Initialize Fabric Canvas
+        const fCanvas = new fabric.Canvas(fabricCanvasElRef.current, {
+          width: width,
+          height: height,
+          selection: true,
+        });
+
+        fabricCanvasRef.current = fCanvas;
+        onCanvasInit(fCanvas);
+
+        // Load existing edits for this page if they exist
+        const savedState = usePdfStore.getState().canvasStates[currentPage];
+        if (savedState && savedState.objects && savedState.objects.length > 0) {
+          fCanvas.loadFromJSON(savedState, () => {
+            fCanvas.requestRenderAll();
+          });
+        }
+
+        // Setup Event Listeners
+        setupCanvasEvents(fCanvas);
+
+        // Load PDF text items for direct editing
+        const items = await getPageTextItems(pdfDocument, currentPage, zoom, rotation);
+        if (active) {
+          setTextItems(items);
+          setLoading(false);
+        }
+      } catch (err) {
+        console.error("Error rendering PDF or initializing canvas:", err);
+        if (active) setLoading(false);
+      }
+    };
+
+    initPage();
+
+    return () => {
+      active = false;
+      if (fabricCanvasRef.current) {
+        fabricCanvasRef.current.dispose();
+        fabricCanvasRef.current = null;
+      }
+    };
+  }, [pdfDocument, currentPage, zoom, rotation, onCanvasInit, setupCanvasEvents]);
 
   // Click handler for direct text editing
   const handleTextItemClick = (item: TextItemInfo) => {

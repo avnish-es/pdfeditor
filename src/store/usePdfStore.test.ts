@@ -16,6 +16,8 @@ describe("usePdfStore Zustand Store", () => {
     expect(state.activeTool).toBe("select");
     expect(state.undoStack).toEqual([]);
     expect(state.redoStack).toEqual([]);
+    expect(state.pageLabels).toEqual({});
+    expect(state.bookmarks).toEqual([]);
   });
 
   it("should set PDF file and generate URL", () => {
@@ -81,5 +83,24 @@ describe("usePdfStore Zustand Store", () => {
     usePdfStore.getState().redo();
     expect(usePdfStore.getState().undoStack.length).toBe(2);
     expect(usePdfStore.getState().redoStack.length).toBe(0);
+  });
+
+  it("should manage page labels and bookmarks", () => {
+    usePdfStore.getState().setPageLabel(2, "Executive Summary");
+    expect(usePdfStore.getState().pageLabels[2]).toBe("Executive Summary");
+
+    usePdfStore.getState().clearPageLabel(2);
+    expect(usePdfStore.getState().pageLabels[2]).toBeUndefined();
+
+    usePdfStore.getState().addBookmark("Section 1", 3);
+    const firstBookmark = usePdfStore.getState().bookmarks[0];
+    expect(firstBookmark.title).toBe("Section 1");
+    expect(firstBookmark.pageNumber).toBe(3);
+
+    usePdfStore.getState().updateBookmark(firstBookmark.id, "Updated Section");
+    expect(usePdfStore.getState().bookmarks[0].title).toBe("Updated Section");
+
+    usePdfStore.getState().removeBookmark(firstBookmark.id);
+    expect(usePdfStore.getState().bookmarks).toEqual([]);
   });
 });

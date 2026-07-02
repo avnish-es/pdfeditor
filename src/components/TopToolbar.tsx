@@ -14,6 +14,8 @@ import {
   GitCompare,
   Sparkles,
   HelpCircle,
+  Search,
+  Menu,
 } from "lucide-react";
 import { usePdfStore } from "../store/usePdfStore";
 import { Button } from "./ui/Button";
@@ -27,6 +29,14 @@ interface TopToolbarProps {
   onSplitClick: () => void;
   onSecurityClick: () => void;
   onHelpClick: () => void;
+  onSearchClick: () => void;
+  onMobileToolsClick: () => void;
+  onPrefetchWorkspace: () => void;
+  onPrefetchOcr: () => void;
+  onPrefetchCompare: () => void;
+  onPrefetchPdfOps: () => void;
+  onPrefetchSecurity: () => void;
+  saveStatus: string;
 }
 
 export const TopToolbar: React.FC<TopToolbarProps> = ({
@@ -37,6 +47,14 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
   onSplitClick,
   onSecurityClick,
   onHelpClick,
+  onSearchClick,
+  onMobileToolsClick,
+  onPrefetchWorkspace,
+  onPrefetchOcr,
+  onPrefetchCompare,
+  onPrefetchPdfOps,
+  onPrefetchSecurity,
+  saveStatus,
 }) => {
   const {
     pdfFile,
@@ -75,11 +93,15 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
     fileInputRef.current?.click();
   };
 
+  const handleUploadIntent = () => {
+    onPrefetchWorkspace();
+  };
+
   return (
     <header className="h-14 border-b border-border bg-card text-card-foreground flex items-center justify-between px-4 z-20 shadow-sm select-none">
       {/* Left: Brand & File Name */}
       <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2 cursor-pointer" onClick={triggerUpload}>
+        <div className="flex items-center gap-2 cursor-pointer" onClick={triggerUpload} onMouseEnter={handleUploadIntent} onFocus={handleUploadIntent}>
           <div className="bg-primary p-1.5 rounded-md text-primary-foreground">
             <Sparkles className="h-5 w-5 animate-pulse" />
           </div>
@@ -93,11 +115,16 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
         )}
 
         {pdfFile ? (
-          <div className="flex items-center gap-2 max-w-[200px] sm:max-w-[300px]">
-            <span className="text-sm font-medium truncate" title={pdfFile.name}>
-              {pdfFile.name}
-            </span>
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={triggerUpload}>
+          <div className="flex items-center gap-2 max-w-[240px] sm:max-w-[360px]">
+            <div className="min-w-0">
+              <span className="text-sm font-medium truncate block" title={pdfFile.name}>
+                {pdfFile.name}
+              </span>
+              <span className="text-[11px] text-muted-foreground truncate block" title={saveStatus}>
+                {saveStatus}
+              </span>
+            </div>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={triggerUpload} onMouseEnter={handleUploadIntent} onFocus={handleUploadIntent}>
               <Upload className="h-3.5 w-3.5" />
             </Button>
           </div>
@@ -106,6 +133,8 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
             variant="primary"
             size="sm"
             onClick={triggerUpload}
+            onMouseEnter={handleUploadIntent}
+            onFocus={handleUploadIntent}
             className="flex items-center gap-2 shadow-md"
           >
             <Upload className="h-4 w-4" />
@@ -218,19 +247,19 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
 
             {/* Quick Tools */}
             <div className="hidden lg:flex items-center gap-1 mr-2">
-              <Button variant="ghost" size="sm" onClick={onOcrClick} className="text-xs flex gap-1 items-center">
+              <Button variant="ghost" size="sm" onClick={onOcrClick} onMouseEnter={onPrefetchOcr} onFocus={onPrefetchOcr} className="text-xs flex gap-1 items-center">
                 OCR
               </Button>
-              <Button variant="ghost" size="sm" onClick={onCompareClick} className="text-xs flex gap-1 items-center">
+              <Button variant="ghost" size="sm" onClick={onCompareClick} onMouseEnter={onPrefetchCompare} onFocus={onPrefetchCompare} className="text-xs flex gap-1 items-center">
                 <GitCompare className="h-3.5 w-3.5" /> Compare
               </Button>
-              <Button variant="ghost" size="sm" onClick={onMergeClick} className="text-xs">
+              <Button variant="ghost" size="sm" onClick={onMergeClick} onMouseEnter={onPrefetchPdfOps} onFocus={onPrefetchPdfOps} className="text-xs">
                 Merge
               </Button>
-              <Button variant="ghost" size="sm" onClick={onSplitClick} className="text-xs">
+              <Button variant="ghost" size="sm" onClick={onSplitClick} onMouseEnter={onPrefetchPdfOps} onFocus={onPrefetchPdfOps} className="text-xs">
                 <Split className="h-3.5 w-3.5 mr-0.5" /> Split
               </Button>
-              <Button variant="ghost" size="sm" onClick={onSecurityClick} className="text-xs">
+              <Button variant="ghost" size="sm" onClick={onSecurityClick} onMouseEnter={onPrefetchSecurity} onFocus={onPrefetchSecurity} className="text-xs">
                 Protect
               </Button>
             </div>
@@ -238,6 +267,14 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
         )}
 
         {/* Theme Toggle */}
+        <Button variant="ghost" size="icon" onClick={onSearchClick} className="h-9 w-9 rounded-lg" title="Find in document">
+          <Search className="h-4 w-4" />
+        </Button>
+
+        <Button variant="ghost" size="icon" onClick={onMobileToolsClick} className="h-9 w-9 rounded-lg lg:hidden" title="Tools & Pages">
+          <Menu className="h-4 w-4" />
+        </Button>
+
         <Button variant="ghost" size="icon" onClick={toggleDarkMode} className="h-9 w-9 rounded-lg" title="Toggle theme">
           {isDarkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
         </Button>

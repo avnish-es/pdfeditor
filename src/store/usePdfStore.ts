@@ -21,6 +21,12 @@ interface CanvasState {
   background?: string;
 }
 
+export interface BookmarkItem {
+  id: string;
+  title: string;
+  pageNumber: number;
+}
+
 interface PdfStore {
   // Document state
   pdfFile: File | null;
@@ -44,6 +50,8 @@ interface PdfStore {
 
   // Multi-page Canvas States
   canvasStates: { [pageNumber: number]: CanvasState };
+  pageLabels: { [pageNumber: number]: string };
+  bookmarks: BookmarkItem[];
   
   // Selection / Property state
   selectedObject: any | null;
@@ -67,7 +75,7 @@ interface PdfStore {
 
   // UI state
   isDarkMode: boolean;
-  sidebarTab: "edit" | "annotate" | "pages" | "forms" | "sign" | "advanced" | "security";
+  sidebarTab: "edit" | "annotate" | "pages" | "outline" | "forms" | "sign" | "advanced" | "security";
   isCompareMode: boolean;
   comparePdfFile: File | null;
 
@@ -86,6 +94,11 @@ interface PdfStore {
   setTextFontFamily: (family: string) => void;
   setIsBold: (isBold: boolean) => void;
   setIsItalic: (isItalic: boolean) => void;
+  setPageLabel: (pageNumber: number, label: string) => void;
+  clearPageLabel: (pageNumber: number) => void;
+  addBookmark: (title: string, pageNumber: number) => void;
+  updateBookmark: (id: string, title: string) => void;
+  removeBookmark: (id: string) => void;
   
   // Canvas State Actions
   saveCanvasState: (pageNumber: number, state: CanvasState) => void;
@@ -99,7 +112,7 @@ interface PdfStore {
 
   // UI Actions
   toggleDarkMode: () => void;
-  setSidebarTab: (tab: "edit" | "annotate" | "pages" | "forms" | "sign" | "advanced" | "security") => void;
+  setSidebarTab: (tab: "edit" | "annotate" | "pages" | "outline" | "forms" | "sign" | "advanced" | "security") => void;
   setCompareMode: (enabled: boolean) => void;
   setComparePdfFile: (file: File | null) => void;
   
@@ -127,6 +140,8 @@ const initialStates = {
   isBold: false,
   isItalic: false,
   canvasStates: {},
+  pageLabels: {},
+  bookmarks: [],
   selectedObject: null,
   selectedObjectProperties: null,
   undoStack: [],
@@ -219,6 +234,50 @@ export const usePdfStore = create<PdfStore>((set, get) => ({
 
   setIsItalic: (isItalic) => {
     set({ isItalic });
+  },
+
+  setPageLabel: (pageNumber, label) => {
+    set((store) => ({
+      pageLabels: {
+        ...store.pageLabels,
+        [pageNumber]: label,
+      },
+    }));
+  },
+
+  clearPageLabel: (pageNumber) => {
+    set((store) => {
+      const nextLabels = { ...store.pageLabels };
+      delete nextLabels[pageNumber];
+      return { pageLabels: nextLabels };
+    });
+  },
+
+  addBookmark: (title, pageNumber) => {
+    set((store) => ({
+      bookmarks: [
+        ...store.bookmarks,
+        {
+          id: Math.random().toString(36).slice(2, 10),
+          title,
+          pageNumber,
+        },
+      ],
+    }));
+  },
+
+  updateBookmark: (id, title) => {
+    set((store) => ({
+      bookmarks: store.bookmarks.map((bookmark) =>
+        bookmark.id === id ? { ...bookmark, title } : bookmark
+      ),
+    }));
+  },
+
+  removeBookmark: (id) => {
+    set((store) => ({
+      bookmarks: store.bookmarks.filter((bookmark) => bookmark.id !== id),
+    }));
   },
 
   saveCanvasState: (pageNumber, state) => {

@@ -1,8 +1,20 @@
-import * as pdfjsLib from "pdfjs-dist";
-import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+type PdfJsModule = typeof import("pdfjs-dist");
 
-// Set worker source to the locally bundled worker file
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+let pdfjsModulePromise: Promise<PdfJsModule> | null = null;
+
+const getPdfjsModule = async (): Promise<PdfJsModule> => {
+  if (!pdfjsModulePromise) {
+    pdfjsModulePromise = Promise.all([
+      import("pdfjs-dist"),
+      import("pdfjs-dist/build/pdf.worker.min.mjs?url"),
+    ]).then(([pdfjsLib, workerModule]) => {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = workerModule.default;
+      return pdfjsLib;
+    });
+  }
+
+  return pdfjsModulePromise;
+};
 
 export interface TextItemInfo {
   text: string;
@@ -19,6 +31,7 @@ export interface TextItemInfo {
  * Loads a PDF document from a File object
  */
 export const loadPdfDocument = async (file: File): Promise<any> => {
+  const pdfjsLib = await getPdfjsModule();
   const arrayBuffer = await file.arrayBuffer();
   const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
   return loadingTask.promise;
@@ -75,6 +88,7 @@ export const getPageTextItems = async (
   viewportScale: number = 1.0,
   rotation: number = 0
 ): Promise<TextItemInfo[]> => {
+  const pdfjsLib = await getPdfjsModule();
   const page = await pdfDoc.getPage(pageNum);
   const textContent = await page.getTextContent();
   

@@ -19,7 +19,9 @@ export const initDb = (): Promise<IDBDatabase> => {
 export const saveSession = async (
   pdfFile: File | null,
   canvasStates: any,
-  currentPage: number
+  currentPage: number,
+  pageLabels: Record<number, string> = {},
+  bookmarks: Array<{ id: string; title: string; pageNumber: number }> = []
 ): Promise<void> => {
   try {
     const db = await initDb();
@@ -34,6 +36,8 @@ export const saveSession = async (
     
     store.put(canvasStates, "canvasStates");
     store.put(currentPage, "currentPage");
+    store.put(pageLabels, "pageLabels");
+    store.put(bookmarks, "bookmarks");
     
     return new Promise((resolve, reject) => {
       tx.oncomplete = () => resolve();
@@ -48,6 +52,8 @@ export const loadSession = async (): Promise<{
   pdfFile: File | null;
   canvasStates: any;
   currentPage: number;
+  pageLabels: Record<number, string>;
+  bookmarks: Array<{ id: string; title: string; pageNumber: number }>;
 } | null> => {
   try {
     const db = await initDb();
@@ -57,6 +63,8 @@ export const loadSession = async (): Promise<{
     const pdfFileReq = store.get("pdfFile");
     const canvasStatesReq = store.get("canvasStates");
     const currentPageReq = store.get("currentPage");
+    const pageLabelsReq = store.get("pageLabels");
+    const bookmarksReq = store.get("bookmarks");
     
     await new Promise<void>((resolve, reject) => {
       tx.oncomplete = () => resolve();
@@ -67,6 +75,8 @@ export const loadSession = async (): Promise<{
       pdfFile: pdfFileReq.result || null,
       canvasStates: canvasStatesReq.result || {},
       currentPage: currentPageReq.result || 1,
+      pageLabels: pageLabelsReq.result || {},
+      bookmarks: bookmarksReq.result || [],
     };
   } catch (err) {
     console.error("Failed to load session from IndexedDB:", err);

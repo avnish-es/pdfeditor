@@ -3,7 +3,6 @@ import { Dialog } from "./ui/Dialog";
 import { Button } from "./ui/Button";
 import { usePdfStore } from "../store/usePdfStore";
 import { renderPdfPage } from "../utils/pdfEngine";
-import Tesseract from "tesseract.js";
 import { Clipboard, Download, Loader2 } from "lucide-react";
 
 interface OcrPanelProps {
@@ -32,6 +31,7 @@ export const OcrPanel: React.FC<OcrPanelProps> = ({ isOpen, onClose }) => {
       await renderPdfPage(pdfDocument, currentPage, canvas, 2.0, 0);
 
       setOcrStatus("Initializing OCR Engine...");
+      const { default: Tesseract } = await import("tesseract.js");
       
       // Run Tesseract OCR on the canvas image
       const result = await Tesseract.recognize(
